@@ -1,31 +1,59 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useVoiceChat } from '@/hooks/useVoiceChat';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Loader2, RefreshCw, Languages } from 'lucide-react';
+import VoiceRecorder from '@/components/VoiceRecorder';
+import ChatMessage from '@/components/ChatMessage';
+
+const SUPPORTED_LANGUAGES = [
+  { code: 'en', name: 'English' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'te', name: 'Telugu' },
+  { code: 'kn', name: 'Kannada' },
+  { code: 'ml', name: 'Malayalam' },
+  { code: 'bn', name: 'Bengali' },
+  { code: 'gu', name: 'Gujarati' },
+  { code: 'mr', name: 'Marathi' },
+  { code: 'pa', name: 'Punjabi' },
+];
 
 const Index = () => {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
+  const [targetLanguage, setTargetLanguage] = useState('en');
+  
+  const {
+    messages,
+    loading: messagesLoading,
+    sendingMessage,
+    currentlyPlaying,
+    sendVoiceMessage,
+    playAudio,
+    refreshMessages,
+  } = useVoiceChat();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!authLoading && !user) {
       navigate('/auth');
     }
-  }, [user, loading, navigate]);
+  }, [user, authLoading, navigate]);
 
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <p className="text-xl text-muted-foreground">Loading...</p>
-        </div>
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
   if (!user) {
-    return null; // Will redirect to auth
+    return null;
   }
 
   const handleSignOut = async () => {
@@ -33,34 +61,126 @@ const Index = () => {
     navigate('/auth');
   };
 
+  const handleSendRecording = async (audioBlob: Blob) => {
+    await sendVoiceMessage(audioBlob, targetLanguage);
+  };
+
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="container mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Voice Chat App</h1>
-          <Button variant="outline" onClick={handleSignOut}>
-            Sign Out
-          </Button>
-        </div>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Welcome, {user.email}!</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground mb-4">
-              Your multilingual voice chat app is ready. Start building the voice features here.
+    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
+      <div className="container mx-auto max-w-4xl px-4 py-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+              Voice Chat
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Multilingual voice conversations powered by AI
             </p>
-            <div className="space-y-4">
-              <p className="text-sm">
-                <strong>User ID:</strong> {user.id}
-              </p>
-              <p className="text-sm">
-                <strong>Email:</strong> {user.email}
-              </p>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Languages className="h-4 w-4 text-muted-foreground" />
+              <Select value={targetLanguage} onValueChange={setTargetLanguage}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshMessages}
+              disabled={messagesLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${messagesLoading ? 'animate-spin' : ''}`} />
+            </Button>
+            
+            <Button variant="outline" size="sm" onClick={handleSignOut}>
+              Sign Out
+            </Button>
+          </div>
+        </div>
+
+        {/* Chat Area */}
+        <Card className="h-[60vh] mb-6 shadow-lg border-0 bg-card/50 backdrop-blur">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              Live Chat
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="h-full p-0">
+            <ScrollArea className="h-full px-6 pb-4">
+              {messagesLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center space-y-2">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                    <p className="text-sm text-muted-foreground">Loading messages...</p>
+                  </div>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center space-y-3">
+                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto">
+                      <Languages className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Start a conversation</p>
+                      <p className="text-sm text-muted-foreground">
+                        Record a voice message to begin
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {messages.map((message) => (
+                    <ChatMessage
+                      key={message.id}
+                      message={message}
+                      isOwn={message.user_id === user.id}
+                      onPlayAudio={playAudio}
+                      currentlyPlaying={currentlyPlaying}
+                    />
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
           </CardContent>
         </Card>
+
+        {/* Voice Recorder */}
+        <div className="relative">
+          {sendingMessage && (
+            <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-lg flex items-center justify-center z-10">
+              <div className="text-center space-y-2">
+                <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                <p className="text-sm font-medium">Processing your message...</p>
+              </div>
+            </div>
+          )}
+          <VoiceRecorder
+            onSendRecording={handleSendRecording}
+            disabled={sendingMessage}
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="mt-6 text-center">
+          <p className="text-xs text-muted-foreground">
+            Powered by Sarvam AI • Real-time translation and voice synthesis
+          </p>
+        </div>
       </div>
     </div>
   );
